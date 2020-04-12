@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <title>台风路径播放</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+        
+        #main {
+            margin: 0 auto;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>
+    <script type="text/javascript" src="./js/include-mapboxgl.js" include="axios,turf,vue,ant-design-vue"></script>
+</head>
+
+<body>
+    <div id="main">
+        <a-card :bordered="false">
+            <div class="legend custom">
+                <div class="legend-item"><span class="circle" style="background-color: rgb(0, 254, 223);"></span> <span class="text">热带低压</span></div>
+                <div class="legend-item"><span class="circle" style="background-color: rgb(254, 243, 0);"></span> <span class="text">热带风暴</span></div>
+                <div class="legend-item"><span class="circle" style="background-color: rgb(254, 144, 44);"></span> <span class="text">强热带风暴</span></div>
+                <div class="legend-item"><span class="circle" style="background-color: rgb(254, 4, 4);"></span> <span class="text">台风</span></div>
+                <div class="legend-item"><span class="circle" style="background-color: rgb(254, 58, 163);"></span> <span class="text">强台风</span></div>
+                <div class="legend-item"><span class="circle" style="background-color: rgb(174, 0, 217);"></span> <span class="text">超强台风</span></div>
+            </div>
+        </a-card>
+        <a-button type="primary" style="position: absolute;z-index: 999;bottom: 0;
+                            left: 0;" v-on:click="start()">播放</a-button>
+    </div>
+    <div id='map'></div>
+
+    <script type="text/javascript" src="./js/extra/typhoon/Utils.js"></script>
+    <script type="text/javascript" src="./js/extra/typhoon/TyphoonRouteLayer.js"></script>
+    <script type="text/javascript" src="./js/extra/typhoon/TyphoonForecastLayer.js"></script>
+    <script type="text/javascript" src="./js/extra/typhoon/TyphoonCurrentLayer.js"></script>
+    <script type="text/javascript">
+        new Vue({
+            el: '#main',
+            data() {
+                return {
+                    map: null,
+                    typhoonPoints: [],
+                    typhoonRoutePoints: [],
+                    typhoonIndex: 0,
+                    typhoonCurrentLayer: null,
+                    typhoonRouteLayer: null,
+                    typhoonForecastLayer: null
+                }
+            },
+            mounted() {
+                this.map = new mapboxgl.Map({
+                    container: 'map',
+                    style: {
+                        "version": 8,
+                        "glyphs": "./libs/mapbox-gl/font/{fontstack}/{range}.pbf",
+                        //"sprite":window.location.origin+"/GIS-Master/examples/mapboxgl//libs/mapbox-gl/sprites/sprite",
+                        "sprite": window.location.origin + "/examples/mapboxgl/data/track/sprite",
+                        "sources": {
+                            "raster-tiles": {
+                                "type": "raster",
+                                //"tiles": ["https://map.geoq.cn/ArcGIS/rest/services/ChinaOnlineStreetPurplishBlue/MapServer/tile//{z}/{y}/{x}"],
+                                "tiles": ["http://support.supermap.com.cn:8090/iserver/services/map-china400/rest/maps/ChinaDark/zxyTileImage.png?z={z}&x={x}&y={y}"],
+                                "tileSize": 256
+                            }
+                        },
+                        "layers": [{
+                            "id": "basemap",
+                            "type": "raster",
+                            "source": "raster-tiles",
+                            "minzoom": 0,
+                            "maxzoom": 15
+                        }]
+                    },
+                    attributionControl: false,
+                    center: [121.646, 27.462],
+                    zoom: 6,
+                    pitch: 0
+                });
+
+                this.map.on('load', () => {
+
+                    axios.get('./data/track/lekima.json').then(res => {
+                        let data = res.data.points;
+                        //data = data.sort((a, b) => new Date(b.time) - new Date(a.time));
+                        //data = _.sortBy(data, item => new Date(item.time));
+                        this.addTyphoonLayer(this.map, data);
+                    })
+                })
+
+
+            },
+            methods: {
+                start() {
+                    this.reset();
+                    this.animate();
+                },
+                addTyphoonLayer(map, typhoonPoints) {
+                    this.typhoonPoints = typhoonPoints;
+                    // let typhoonCurrentPoint = _.cloneDeep(typhoonPoints[typhoonPoints.length - 1]);
+                    let typhoonCurrentPoint = typhoonPoints[typhoonPoints.length - 1];
+                    this.typhoonCurrentLayer = new TyphoonCurrentLayer(map, typhoonCurrentPoint);
+                    this.typhoonRouteLayer = new TyphoonRouteLayer(map, typhoonPoints);
+                    this.typhoonForecastLayer = new TyphoonForecastLayer(map, typhoonCurrentPoint);
+                },
+                reset() {
+                    this.typhoonIndex = 0;
+                    this.typhoonRoutePoints = [];
+
+                },
+                animate() {
+                    //使用requestAnimationFrame
+                    // if (this.typhoonIndex < this.typhoonPoints.length) {
+                    //     let typhoonCurrent = this.typhoonPoints[this.typhoonIndex];
+                    //     this.typhoonRoutePoints.push(typhoonCurrent);
+                    //     this.typhoonRouteLayer.update(this.typhoonRoutePoints);
+                    //     this.typhoonCurrentLayer.update(typhoonCurrent);
+                    //     this.typhoonForecastLayer.update(typhoonCurrent);
+                    //     requestAnimationFrame(this.animate);
+                    // }
+                    // this.typhoonIndex++;
+
+                    //使用setInterval
+                    this.intervalTimer && clearInterval(this.intervalTimer);
+                    this.intervalTimer = setInterval(() => {
+                        if (this.typhoonIndex == this.typhoonPoints.length) {
+                            clearInterval(this.intervalTimer);
+                            this.intervalTimer = null;
+                            return;
+                        }
+                        let typhoonCurrent = this.typhoonPoints[this.typhoonIndex];
+                        this.typhoonRoutePoints.push(typhoonCurrent);
+                        this.typhoonRouteLayer.update(this.typhoonRoutePoints);
+                        this.typhoonCurrentLayer.update(typhoonCurrent);
+                        this.typhoonForecastLayer.update(typhoonCurrent);
+                        this.typhoonIndex++;
+                    }, 100);
+
+
+                }
+            }
+        })
+    </script>
+    <style>
+        .ant-card {
+            bottom: 0;
+            right: 0;
+            z-index: 99;
+            position: absolute;
+            width: 150px;
+        }
+        
+        .ant-card-body {
+            padding: 0;
+        }
+        
+        .legend {
+            position: absolute;
+            right: 10px;
+            bottom: 38px;
+            border-radius: 4px;
+            background-color: rgba(0, 0, 0, .5);
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, .1);
+        }
+        
+        .legend-item .circle {
+            border-radius: 50%;
+        }
+        
+        .legend-item {
+            padding: 4px 6px;
+        }
+        
+        .legend.custom {
+            background-color: hsla(0, 0%, 100%, .8);
+        }
+        
+        .legend-item .circle,
+        .legend-item .square {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-right: 2px;
+        }
+        
+        .legend.custom .text {
+            color: #496c8a;
+        }
+        /* .marker {
+            padding: 0;
+            background: url('./img/typhoon.gif');
+            width: 40px;
+            height: 40px;
+            background-position: 50%;
+            -webkit-transform: scale(0.75);
+            transform: scale(0.75);
+        } */
+        
+        .marker {
+            display: block;
+            padding: 0;
+            background: url('./img/typhoon.png');
+            width: 40px;
+            height: 40px;
+            background-position: 50%;
+            -webkit-transform: scale(0.75);
+            transform: scale(0.75);
+            animation: rotation 1s linear infinite;
+            -webkit-animation: rotation 1s linear infinite;
+            transform-origin: center;
+        }
+        
+        @keyframes rotation {
+            from {
+                -webkit-transform: rotate(0deg);
+                transform: rotate(0deg);
+            }
+            to {
+                -webkit-transform: rotate(360deg);
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</body>
+
+</html>
